@@ -41,8 +41,24 @@ def check(text):
     return text
 
 
+def write_entry(dest):
+    """Write the validated entry to dest; return (text, bytes written)."""
+    text = check(ENTRY)
+    blob = text.encode("utf-8")
+    folder = os.path.dirname(dest)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    with open(dest, "wb") as handle:
+        handle.write(blob)  # no trailing newline: the file is exactly the line
+    with open(dest, "rb") as handle:
+        if handle.read() != blob:
+            raise SystemExit("round-trip mismatch: file does not match entry")
+    return text, blob
+
+
 def self_test():
     """Run the validator through its rejection cases and boundaries."""
+    import tempfile
     bad = [
         ("", "empty"),
         ("   ", "whitespace-only"),
@@ -64,6 +80,14 @@ def self_test():
         print("self-test ok: %s boundary accepted" % label)
     check(ENTRY)
     print("self-test ok: entry itself accepted")
+    # exercise the real write path, not just the validator: the file the
+    # grader reads must be byte-identical to the entry, no trailing newline
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = os.path.join(tmp, "entry.txt")
+        text, blob = write_entry(dest)
+        if len(blob) != len(text) or blob != text.encode("utf-8"):
+            raise SystemExit("self-test FAIL: written bytes differ from entry")
+        print("self-test ok: write round-trip is byte-identical")
     print("self-test: all cases passed")
     return 0
 
@@ -74,17 +98,8 @@ def run():
             return self_test()
         print(USAGE, file=sys.stderr)
         return 2
-    text = check(ENTRY)
-    blob = text.encode("utf-8")
     dest = os.environ.get("ENTRY_OUTPUT", "/output/entry.txt")
-    folder = os.path.dirname(dest)
-    if folder:
-        os.makedirs(folder, exist_ok=True)
-    with open(dest, "wb") as handle:
-        handle.write(blob)  # no trailing newline: the file is exactly the line
-    with open(dest, "rb") as handle:
-        if handle.read() != blob:
-            raise SystemExit("round-trip mismatch: file does not match entry")
+    text, blob = write_entry(dest)
     print("wrote %s: %d chars, sha256 %s"
           % (dest, len(text), hashlib.sha256(blob).hexdigest()))
     return 0
